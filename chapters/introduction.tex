@@ -1,0 +1,72 @@
+%----------------------------------------------------------------------------------------
+%----------------------------------------------------------------------------------------
+
+% =====================================================================================================
+%
+% Introduction 	- 	Introduction to Problem & Data
+%
+% =====================================================================================================
+\section{Abstract}
+\label{sec:Introduction}
+
+We have been hired to provide sound criminal reform and policy research for \href{https://en.wikipedia.org/wiki/Terry_Sanford}{Terry Sanford (D-NC)}, junior Senator representing North Carolina for the \href{https://en.wikipedia.org/wiki/100th_United_States_Congress}{100th U.S. Congress}.  We have obtained a single cross-section of crime statistics for a selection of counties in North Carolina from calendar year 1987 from which to construct our analysis.  We endeavor to help the Sanford re-election campaign understand the determinants of crime and generate policy suggestions that are applicable to local [North Carolina] government agencies.
+
+\section{Code Book}
+\label{sec:Code Book}
+Our crime statistics data was provided in a mysteriously sourced \textit{crime\_v2.csv} file for which we were provided only the following variable descriptions:
+
+\label{fig:EDA - Code Book}
+\begin{table}[!ht]
+	\small
+	\begin{minipage}[t]{0.5\textwidth}
+		\centering
+		\begin{tabular}[t]{{p{0.5cm}p{1.5cm}p{5cm}}}
+			\toprule
+			\textbf{Pos} & \textbf{Variable} & \textbf{Description} \\
+			\midrule
+			1  &  county  &  county identifier \\
+			2  &  year  &  1987 \\
+			3  &  crmrte  &  crimes committed per person \\
+			4  &  prbarr  &  'probability' of arrest \\
+			5  &  prbconv  &  'probability' of conviction \\
+			6  &  prbpris  &  'probability' of prison sentence \\
+			7  &  avgsen  &  avg. sentence, days \\
+			8  &  polpc  &  police per capita \\
+			9  &  density  &  people per sq. mile \\
+			10  &  taxpc  &  tax revenue per capita \\
+			11  &  west  &  =1 if in western N.C. \\
+			12  &  central  &  =1 if in central N.C. \\
+			\vdots & \vdots & \vdots\\
+			\bottomrule
+		\end{tabular}
+	\end{minipage} \hfill
+	\begin{minipage}[t]{0.5\textwidth}
+		\centering
+		\begin{tabular}[t]{{p{0.5cm}p{1.5cm}p{5cm}}}
+			\toprule
+			\textbf{Pos} & \textbf{Variable} & \textbf{Description}  \\
+			\midrule
+			\vdots & \vdots & \vdots \\
+			13  &  urban  &  =1 if in SMSA \\
+			14  &  pctmin80  &  perc. minority, 1980 \\
+			15  &  wcon  &  weekly wage, construction \\
+			16  &  wtuc  &  wkly wge, trns, util, commun \\
+			17  &  wtrd  &  wkly wge, whlesle, retail trade \\
+			18  &  wfir  &  wkly wge, fin, ins, real estx1 \\
+			19  &  wser  &  wkly wge, service industry \\
+			20  &  wmfg  &  wkly wge, manufacturing \\
+			21  &  wfed  &  wkly wge, fed employees \\
+			22  &  wsta  &  wkly wge, state employees \\
+			23  &  wloc  &  wkly wge, local gov emps \\
+			24  &  mix  &  offense mix: face-to-face/other \\
+			25  &  pctymle  &  percent young male\\
+			\bottomrule
+		\end{tabular}
+	\end{minipage}
+	\caption{Crime\_V2 Code Book}
+	\label{fig:Code Book}
+\end{table}
+
+In the literature on crime, researchers often distinguish between the certainty of punishment (do criminals expect to get caught and face punishment) and the severity of punishment (for example, how long prison sentences are). The former concept is the motivation for the 'probability' variables. The probability of arrest is proxied by the ratio of arrests to offenses, measures drawn from the FBI's Uniform Crime Reports. The probability of conviction is proxied by the ratio of convictions to arrests, and the probability of prison sentence is proxied by the convictions resulting in a prison sentence to total convictions. The data on convictions is taken from the prison and probation files of the North Carolina Department of Correction.\\
+
+The percent young male variable records the proportion of the population that is male and between the ages of 15 and 24. This variable, as well as percent minority, was drawn from census data.  The number of police per capita was computed from the FBI's police agency employee counts.  The variables for wages in different sectors were provided by the North Carolina Employment Security Commission.

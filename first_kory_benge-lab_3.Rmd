@@ -1,0 +1,947 @@
+---
+title: 'W203 Statistics for Data Science - Lab 3 EDA'
+author: 'Section 2 - League of Greatness: Joy First, Kevin Kory, Cristopher Benge'
+jupyter:
+  jupytext:
+    text_representation:
+      extension: .Rmd
+      format_name: rmarkdown
+      format_version: '1.1'
+      jupytext_version: 1.2.3
+  kernelspec:
+    display_name: R
+    language: R
+    name: ir
+date: "November, 2019"
+output:
+  pdf_document: default
+  html_document: default
+header-includes: \usepackage{amssymb}
+self_contained: yes
+always_allow_html: yes
+version: '1'
+---
+
+# Install Packages and Load Study Data
+
+```{r setup, Include=TRUE, message=FALSE, warning=FALSE}
+# The setup code chunk is used to install any necessary but missing libraries,
+# load the libraries, set document / knitr options, and load the dataset under analysis.
+
+# install any necessary packages not already installed
+required_pkg <- c("plotly", "ggplot2", "dplyr", "gridExtra", "latex2exp", "maps","ggthemes","caret",
+  "knitr", "bootstrap", "effsize", "inferr", "grid", "tidyverse", "MASS", "htmltools","Metrics",
+  "DT","stargazer","ggcorrplot","leaps","lmtest","car")
+install_pkg <- required_pkg[!(required_pkg %in% installed.packages())]
+if (length(install_pkg) > 0) {install.packages(install_pkg, 
+  repos = "http://cran.us.r-project.org")}
+
+# load the packages
+out <- suppressPackageStartupMessages(lapply(required_pkg, library,
+  character.only = TRUE, warn.conflicts = FALSE, quietly = TRUE, verbose = FALSE))
+
+# set knitr options
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(tidy.opts=list(width.cutoff=80),tidy=TRUE)
+knitr::opts_chunk$set(root.dir = normalizePath(".."))
+
+# print the versions of each package loaded for reference
+for (lib in required_pkg) {
+  print(paste(c(paste0(lib, " verison:"), toString(packageVersion(lib))), collapse=" "))
+}
+
+# custom Berkeley palette for visuals
+berkeley_palette <- c("#003262", "#FDB515", "#BC9B6A", "#C2B9A7", 
+  "#B9D3B6", "#2D637F", "#E09E19", "#5C3160", "#53626F")
+```
+
+We will examine a single cross-section of 1987 North Carolina crime data summarized by county from "Estimating the Economic Model of Crime with Panel Data" (C. Cornwell, W. Trumbull - 1994).
+The dependent variable of interest for our analysis is `crmrte`, identified in the codebook as "crimes committed per person."
+
+The purpose of this study is to provide research for a political campaign, assisting in understanding the determinants of crime and to generate policy suggestions that are applicable to local government.
+
+```{r InitialDataLoad, warning=FALSE}
+# load the 1987 crime data from CSV
+crime <- read.csv("crime_v2.csv")
+
+# summarize the (raw) dataframe variables by capturing the shape (dimensions)
+shp <- dim(crime)
+
+#review the data types and shape of the dataframe
+print(str(crime))
+print(paste0("Rows: ", shp[1], ", Columns: ", shp[2]))
+
+```
+
+```{r DataAnomalies, warning=FALSE}
+
+# identify missing data and dupliated rows
+datatable(tail(crime,10), rownames = TRUE, filter="top", options = list(pageLength = 10, scrollX=T) )
+
+# print the number of empty rows and duplicate rows
+print(paste0("Numer of observations with all missing values: ", 
+  dim(crime[rowSums(is.na(crime)) == ncol(crime) -1,])[1]))
+
+print(paste0("Number of rows that are duplicated: ", 
+  dim(crime[duplicated(crime) & rowSums(is.na(crime)) != ncol(crime) -1,])[1]))
+
+# show the results in a datatable for duplicated county 193
+datatable(crime[crime$county == 193 ,], rownames = TRUE, filter="top", options = list(pageLength = 2, scrollX=F))
+
+```
+
+We note a few initial areas of concern in the data provided from above:
+
+  * column `prbconv` is a factor and will need to be converted to numeric for regression / analysis.
+  * there are 6 rows that are blank / have missing values.
+  * one row of the data is duplicated (County 193)
+
+As these are likely mistakes in the collection, organization, or storage of the data, we elect to clean these up:
+
+```{r CleanUp_AisleThree, warning=FALSE}
+
+#eliminate the 6 rows missing data (at the end of the CSV)
+crime <- na.omit(crime)
+
+# remove duplicate row (county 193 listed twice)
+crime <- crime[!duplicated(crime),]
+
+# convert prbconv from factor to numeric
+crime$prbconv <- as.numeric(levels(crime$prbconv))[crime$prbconv]
+
+# output descriptive statistics after cleanup (LaTeX format for our final output)
+stargazer(crime, title="Descriptive Statistics", type = "latex", digits=2)
+```
+
+Now that initial cleanup has taken place, we review the distribution of data.
+
+```{r PostCleanupAnalysis, warning=FALSE}
+# review the summary statistics of the data following our intial error cleanup
+shp <- dim(crime)
+print(paste0("Rows: ", shp[1], ", Columns: ", shp[2]))
+stargazer(crime, title="Descriptive Statistics", type = "text", digits=2)
+```
+
+The `wser` value appears to have a very large Max (2177.1 compared to the median and 3rd quartile).  The rest of the `wser` values appears to be in the range of 133-348, so it seems very unlikely that only one county has a value in the 2,000+ weekly range (~104,000 / year) for the service industry.  The county tied to this record is 185, which is the FIPS code for Warren County, North Carolina (https://en.wikipedia.org/wiki/Warren_County,_North_Carolina).
+
+
+```{r WSEREDAPlot1, warning=FALSE}
+# plot a boxplot of the WSER variable with outliers identified
+
+# create a list of outliers in the WSER variable
+idx <- data.frame(x=seq(1,length(crime$wser),by=1))[crime$wser > 
+    (as.numeric(quantile(crime$wser)[4]) + (IQR(crime$wser) * 1.5)) | 
+    crime$wser < (as.numeric(quantile(crime$wser)[2]) - (IQR(crime$wser) * 1.5)),]
+
+plot_ly(type = "box") %>%
+  add_boxplot(y = crime$wser, jitter=0.3, pointpos=-1.5, boxpoints="all",
+    opacity=0.8, ids=seq(1,length(crime$wser), by=1), fillcolor=berkeley_palette[1],
+    marker=list(color=berkeley_palette[4], opacity=0.9), 
+    line=list(color="#000000", outlierwidth=2, width=2),
+    name="Weekly Wage, Service Industry", boxmean=TRUE, showlegend=FALSE, selectedpoints=idx-1,
+    selected=list(marker=list(color="rgb(219, 64, 82)"))) %>% 
+  layout(title = "North Carolina (1987) - Weekly Wage, Service Industry\nby County", width=500, 
+    yaxis=list(title="Weekly Wage")) %>% 
+  add_annotations(y = 0.94, text = toString(crime[idx[4],]$wser), x = 0.155,
+    yref = "paper", xref = "paper", showarrow = TRUE, arrowhead = 1, ax = 40, ay = 30)
+```
+
+This value is likely a decimal placement issue, where the real value is ~217.7068, based on a survey of the surrounding counties:
+
+```{r WSEREDA, warning=FALSE}
+# Vance County : 181, Franklin County : 69, Nash County : 127, Halifax County : 83, Northampton County : 131
+mean(crime[crime$county %in% c(181,69,127,83,131),c("county","wser")]$wser)
+
+# Fix the WSER value for Warren County
+crime[crime$county == 185,c("wser")] <- crime[crime$county == 185,c("wser")] * .1 
+```
+
+```{r FixWSEREDA, warning=FALSE}
+# plot a boxplot of the WSER variable with outliers identified
+# create a list of outliers in the WSER variable
+idx <- data.frame(x=seq(1,length(crime$wser),by=1))[crime$wser > 
+    (as.numeric(quantile(crime$wser)[4]) + (IQR(crime$wser) * 1.5)) | 
+    crime$wser < (as.numeric(quantile(crime$wser)[2]) - (IQR(crime$wser) * 1.5)),]
+
+plot_ly(type = "box") %>%
+  add_boxplot(y = crime$wser, jitter=0.3, pointpos=-1.5, boxpoints="all",
+    opacity=0.8, ids=seq(1,length(crime$wser), by=1), fillcolor=berkeley_palette[1],
+    marker=list(color=berkeley_palette[4], opacity=0.9), 
+    line=list(color="#000000", outlierwidth=2, width=2),
+    name="Weekly Wage, Service Industry", boxmean=TRUE, showlegend=FALSE, selectedpoints=idx-1,
+    selected=list(marker=list(color="rgb(219, 64, 82)"))) %>% 
+  layout(title = "North Carolina (1987) - Weekly Wage, Service Industry\nby County", width=500, 
+    yaxis=list(title="Weekly Wage"))
+```
+
+```{r LogDensityEDA, warning=FALSE}
+# plot a boxplot of the log(density) variable with outliers identified
+# create a list of outliers in the log(density) variable
+crime$density_log <- log(crime$density)
+idx <- data.frame(x=seq(1,length(crime$density_log),by=1))[crime$density_log > 
+    (as.numeric(quantile(crime$density_log)[4]) + (IQR(crime$density_log) * 1.5)) | 
+    crime$density_log < (as.numeric(quantile(crime$density_log)[2]) - (IQR(crime$density_log) * 1.5)),]
+
+plot_ly(type = "box") %>%
+  add_boxplot(y = crime$density_log, jitter=0.3, pointpos=-1.5, boxpoints="all",
+    opacity=0.8, ids=seq(1,length(crime$density_log), by=1), fillcolor=berkeley_palette[1],
+    marker=list(color=berkeley_palette[4], opacity=0.9), 
+    line=list(color="#000000", outlierwidth=2, width=2),
+    name="Log(Density)", boxmean=TRUE, showlegend=FALSE, selectedpoints=idx-1,
+    selected=list(marker=list(color="rgb(219, 64, 82)"))) %>% 
+  layout(title = "North Carolina (1987) - Log(Density) by County", width=500, 
+    yaxis=list(title="Log(Density)")) %>%
+  add_annotations(y = 0.06, text = toString(log(crime[idx[2],]$density)), x = 0.155,
+    yref = "paper", xref = "paper", showarrow = TRUE, arrowhead = 1, ax = 40, ay = -30)
+```
+
+Observation 79 (county = 173, Swain County) is currently listed with a `density` of of 0.0000203422 people per square mile; at 541 square miles, that would equal 0.011 people living in the entire county.  According to U.S. Census Bureau records, Swain County North Carolina had a population of 10,932 (https://www.google.com/publicdata/explore?ds=kf7tgg1uo9ude_&met_y=population&idim=county:37173&hl=en&dl=en).  Upon reviewing `density` more closely along with the Census Bureau records for population and the square mile landmass reported on Wikipedia, it appears that this variable is actually in units of 100 people per square mile.  Even with that adjustment, the data for Swain County would equal only 1.1 person for the entire county; this is clearly incorrect.  Based on the adjusted amount of 109.32 persons (in units of 100), the correct `density` value for Swain County in 1987 should be 0.202070.
+
+```{r FixDensity, warning=FALSE}
+crime[79,"density"] <- 0.202070
+
+# plot a boxplot of the log(density) variable with outliers identified
+# create a list of outliers in the log(density) variable
+crime$density_log <- log(crime$density)
+idx <- data.frame(x=seq(1,length(crime$density_log),by=1))[crime$density_log > 
+    (as.numeric(quantile(crime$density_log)[4]) + (IQR(crime$density_log) * 1.5)) | 
+    crime$density_log < (as.numeric(quantile(crime$density_log)[2]) - (IQR(crime$density_log) * 1.5)),]
+
+plot_ly(type = "box") %>%
+  add_boxplot(y = crime$density_log, jitter=0.3, pointpos=-1.5, boxpoints="all",
+    opacity=0.8, ids=seq(1,length(crime$density_log), by=1), fillcolor=berkeley_palette[1],
+    marker=list(color=berkeley_palette[4], opacity=0.9), 
+    line=list(color="#000000", outlierwidth=2, width=2),
+    name="Log(Density)", boxmean=TRUE, showlegend=FALSE, selectedpoints=idx-1,
+    selected=list(marker=list(color="rgb(219, 64, 82)"))) %>% 
+  layout(title = "North Carolina (1987) - Log(Density) by County", width=500, 
+    yaxis=list(title="Log(Density)"))
+crime <- crime[, !(names(crime) %in% c("density_log"))]
+```
+
+Next, we will take a look at the `polpc` variable to identify the source of the large max value:
+
+```{r polpcEDA, warning=FALSE}
+# create a list of outliers in the POLPC variable
+idx <- data.frame(x=seq(1,length(crime$polpc),by=1))[crime$polpc > 
+    (as.numeric(quantile(crime$polpc)[4]) + (IQR(crime$polpc) * 1.5)) | 
+    crime$polpc < (as.numeric(quantile(crime$polpc)[2]) - (IQR(crime$polpc) * 1.5)),]
+
+# plot a boxplot of the POLPC variable with outliers identified
+plot_ly(type = "box") %>%
+  add_boxplot(y = crime$polpc, jitter=0.3, pointpos=-1.5, boxpoints="all",
+    opacity=0.8, ids=seq(1,length(crime$polpc), by=1), fillcolor=berkeley_palette[1],
+    marker=list(color=berkeley_palette[4], opacity=0.9), 
+    line=list(color="#000000", outlierwidth=2, width=2),
+    name="Police per capita", boxmean=TRUE, showlegend=FALSE, selectedpoints=idx-1,
+    selected=list(marker=list(color="rgb(219, 64, 82)"))) %>% 
+  layout(title = "North Carolina (1987) - Police per Capita with Outliers", width=500, 
+    yaxis=list(title="police / person")) %>% 
+  add_annotations(y = 0.94, text = toString(crime[idx[3],]$polpc), x = 0.155,
+    yref = "paper", xref = "paper", showarrow = TRUE, arrowhead = 1, ax = 40, ay = 30) %>%
+  add_annotations(y = 0.47, text = toString(crime[idx[5],]$polpc), x = 0.15,
+    yref = "paper", xref = "paper", showarrow = TRUE, arrowhead = 1, ax = 40, ay = -30)
+```
+
+County 115 (Madison County) has a `polpc` value of 0.00905433, significantly higher than the other values in all other counties.  According to the U.S. Census, Madison County, NC had a population size of only 17,051 residents making it one of the smaller counties in the state.  Madison County covers only 452 square miles of geograpy and is located in the North West portion of the state, directly bordering Tennesee
+
+At this per capita level, Madison County would have 154.38538 officers covering just 17,051 people.  The mean of the `polpc` variable is 0.00162543 (when excluding Madison County outlier); with this value substituted for Madison, we would have a more realistic level of 27.715 law enforcement officers, which is in-line with other counties in the 20k and below range.  We'll substitute with the mean for Madison County:
+
+```{r MadisonPolPC, warning=FALSE}
+# adjust the POLPC value for county 115 to be the mean value of the sample (excluding county 115 outlier value)
+crime[crime$county == 115,"polpc"] <- mean(crime[crime$county != 115,"polpc"])
+
+# create a list of outliers in the POLPC variable
+idx <- data.frame(x=seq(1,length(crime$polpc),by=1))[crime$polpc > 
+    (as.numeric(quantile(crime$polpc)[4]) + (IQR(crime$polpc) * 1.5)) | 
+    crime$polpc < (as.numeric(quantile(crime$polpc)[2]) - (IQR(crime$polpc) * 1.5)),]
+
+# plot a boxplot of the POLPC variable with outliers identified
+plot_ly(type = "box") %>%
+  add_boxplot(y = crime$polpc, jitter=0.3, pointpos=-1.5, boxpoints="all",
+    opacity=0.8, ids=seq(1,length(crime$polpc), by=1), fillcolor=berkeley_palette[1],
+    marker=list(color=berkeley_palette[4], opacity=0.9), 
+    line=list(color="#000000", outlierwidth=2, width=2),
+    name="Police per capita", boxmean=TRUE, showlegend=FALSE, selectedpoints=idx-1,
+    selected=list(marker=list(color="rgb(219, 64, 82)"))) %>% 
+  layout(title = "North Carolina (1987) - Police per Capita with Outliers", width=500, 
+    yaxis=list(title="police / person"))
+```
+
+Next, we analyze a single large outlier found in the `taxpc` variable.  According to the codebook, `taxpc` is the tax revenue per capita and while the typical range is from 25 - 75, county 55 (Dare County) has a large value of 119.76 per person.  In 1987, Dare County had a population of 19,580 according to U.S. Census records.  The tax rate in Dare County is roughly the same as other counties at 2% with a total of 6.75%.
+
+Based on the historical tax rates and the increasing burden we see in NC taxes from 1981-1987 (ref: https://www.ncleg.gov/DocumentSites/committees/FiscalModernization/Comission%20Meetings/Nov%2028%20and%2029/Nov%2028%20Presentations/History%20of%20State%20and%20Local%20Taxes%20in%20NC%20Paper.pdf), we choose not to treat this value and leave it as-is for the purposes of this analysis.
+
+
+```{r NCTaxPerCapita, warning=FALSE}
+# create a list of outliers in the POLPC variable
+idx <- data.frame(x=seq(1,length(crime$taxpc),by=1))[crime$taxpc > 
+    (as.numeric(quantile(crime$taxpc)[4]) + (IQR(crime$taxpc) * 1.5)) | 
+    crime$taxpc < (as.numeric(quantile(crime$taxpc)[2]) - (IQR(crime$taxpc) * 1.5)),]
+
+# plot a boxplot of the POLPC variable with outliers identified
+plot_ly(type = "box") %>%
+  add_boxplot(y = crime$taxpc, jitter=0.3, pointpos=-1.5, boxpoints="all",
+    opacity=0.8, ids=seq(1,length(crime$taxpc), by=1), fillcolor=berkeley_palette[1],
+    marker=list(color=berkeley_palette[4], opacity=0.9), 
+    line=list(color="#000000", outlierwidth=2, width=2),
+    name="Tax revenue per capita", boxmean=TRUE, showlegend=FALSE, selectedpoints=idx-1,
+    selected=list(marker=list(color="rgb(219, 64, 82)"))) %>% 
+  layout(title = "North Carolina (1987) - Tax Revenue per Capita", width=500, 
+    yaxis=list(title="Tax revenue per capita")) %>% 
+  add_annotations(y = 0.94, text = toString(crime[idx[3],]$taxpc), x = 0.155,
+    yref = "paper", xref = "paper", showarrow = TRUE, arrowhead = 1, ax = 40, ay = 30)
+```
+
+```{r PCTYMLEEDA, warning=FALSE}
+# create a list of outliers in the POLPC variable
+idx <- data.frame(x=seq(1,length(crime$pctymle),by=1))[crime$pctymle > 
+    (as.numeric(quantile(crime$pctymle)[4]) + (IQR(crime$pctymle) * 1.5)) | 
+    crime$pctymle < (as.numeric(quantile(crime$pctymle)[2]) - (IQR(crime$pctymle) * 1.5)),]
+
+# plot a boxplot of the POLPC variable with outliers identified
+plot_ly(type = "box") %>%
+  add_boxplot(y = crime$pctymle, jitter=0.3, pointpos=-1.5, boxpoints="all",
+    opacity=0.8, ids=seq(1,length(crime$pctymle), by=1), fillcolor=berkeley_palette[1],
+    marker=list(color=berkeley_palette[4], opacity=0.9), 
+    line=list(color="#000000", outlierwidth=2, width=2),
+    name="Percent Young Males", boxmean=TRUE, showlegend=FALSE, selectedpoints=idx-1,
+    selected=list(marker=list(color="rgb(219, 64, 82)"))) %>% 
+  layout(title = "North Carolina (1987) - Percent Young Male per County", width=500, 
+    yaxis=list(title="% of Young Males in County")) %>%
+  add_annotations(y = 0.94, text = toString(crime[idx[6],]$pctymle), x = 0.155,
+    yref = "paper", xref = "paper", showarrow = TRUE, arrowhead = 1, ax = 40, ay = 30)
+```
+
+```{r CategoricalErrors, warning=FALSE}
+
+# look for rows where a county is in both the "west" and "central"
+# only one row returns, county 71 - according to the FIPS code this is "Gaston County"
+# Gaston county is surrounded by 3 other counties : Lincoln (109) to the north,
+#   Mecklenburg (119) to the East, and Cleveland (45) to the West.  Let's look at their location defintion:
+dt <- crime %>% filter((west == 1 & central == 1) | (county %in% c(109,119,45))) %>% dplyr::select (county, west, central, urban, crmrte)
+datatable(dt, rownames = FALSE, filter="top", options = list(pageLength = 5, scrollX=F)) 
+dt$crmrte <- 1
+dt[dt$county == 71,"crmrte"] <- 0
+
+# create a map of NC and show the location of Gaston and surrounding counties
+nc_counties <- data.frame(
+  county_name = c("ALAMANCE","ALEXANDER","ALLEGHANY","ANSON","ASHE","AVERY",
+  "BEAUFORT","BERTIE","BLADEN","BRUNSWICK","BUNCOMBE","BURKE","CABARRUS",
+  "CALDWELL","CAMDEN","CARTERET","CASWELL","CATAWBA","CHATHAM","CHEROKEE",
+  "CHOWAN","CLAY","CLEVELAND","COLUMBUS","CRAVEN","CUMBERLAND","CURRITUCK",
+  "DARE","DAVIDSON","DAVIE","DUPLIN","DURHAM","EDGECOMBE","FORSYTH","FRANKLIN",
+  "GASTON","GATES","GRAHAM","GRANVILLE","GREENE","GUILFORD","HALIFAX","HARNETT",
+  "HAYWOOD","HENDERSON","HERTFORD","HOKE","HYDE","IREDELL","JACKSON","JOHNSTON",
+  "JONES","LEE","LENOIR","LINCOLN","MCDOWELL", "MACON","MADISON","MARTIN","MECKLENBURG",
+  "MITCHELL","MONTGOMERY","MOORE","NASH","NEW HANOVER","NORTHAMPTON","ONSLOW",
+  "ORANGE","PAMLICO","PASQUOTANK","PENDER","PERQUIMANS","PERSON","PITT","POLK",
+  "RANDOLPH","RICHMOND","ROBESON","ROCKINGHAM","ROWAN","RUTHERFORD","SAMPSON","SCOTLAND",
+  "STANLY","STOKES","SURRY","SWAIN","TRANSYLVANIA","TYRRELL","UNION","VANCE",
+  "WAKE","WARREN","WASHINGTON","WATAUGA","WAYNE","WILKES","WILSON","YADKIN","YANCEY"),
+  fips_code = seq(1,199,by=2))
+nc_counties$county_name <- tolower(nc_counties$county_name)
+
+nc_map <- tbl_df(map_data("county", region = "north carolina"))
+crm_nc <- merge(x = dt[c("county","crmrte")], y = nc_counties, by.x = "county", by.y = "fips_code", all.x = TRUE)
+colnames(crm_nc) <- c("county","crime","subregion")
+crm_nc <- crm_nc[c("subregion","crime")]
+nc_map <- left_join(nc_map, crm_nc, by="subregion")
+
+# Plot Gaston and Surrounding Counties - all "Central" according to NC data
+ggplot() +
+  labs(title="North Carolina\nGaston (gold) and Surrounding Counties (blue)") +
+  geom_polygon(data=as_data_frame(nc_map), color="black",
+               aes(x=long, y=lat, group=subregion, fill=crime)) +
+  coord_map("polyconic") + ggthemes::theme_map() +
+  scale_fill_continuous(low=berkeley_palette[2],high=berkeley_palette[1]) +
+  theme(legend.position="none", plot.title = element_text(size=18, hjust=0.5))
+
+
+# all surrounding counties to Gaston are central, thus Gaston should be in central only.  Fix the error:
+crime[crime$county == 71, "west"] <- 0
+
+
+# let's highlight the location of all counties now with respect to west / central / east
+dt <- crime %>% dplyr::select (county, crmrte, west, central)
+dt[dt$west == 1,"crmrte"] <- 0 #west
+dt[dt$central == 1,"crmrte"] <- 0.5 #central
+dt[dt$west == 0 & dt$central == 0,"crmrte"] <- 1 #east
+
+nc_map <- tbl_df(map_data("county", region = "north carolina"))
+crm_nc <- merge(x = dt[c("county","crmrte")], y = nc_counties, by.x = "county", by.y = "fips_code", all.x = TRUE)
+colnames(crm_nc) <- c("county","crime","subregion")
+crm_nc <- crm_nc[c("subregion","crime")]
+nc_map <- left_join(nc_map, crm_nc, by="subregion")
+
+# Plot Gaston and Surrounding Counties - all "Central" according to NC data
+ggplot() +
+  labs(title="North Carolina\nWest (gold), Central (brown), East (blue)") +
+  geom_polygon(data=as_data_frame(nc_map), color="black",
+               aes(x=long, y=lat, group=subregion, fill=crime)) +
+  coord_map("polyconic") + ggthemes::theme_map() +
+  scale_fill_continuous(low=berkeley_palette[2],high=berkeley_palette[1], ) +
+  theme(legend.position="none", plot.title = element_text(size=18, hjust=0.5))
+
+```
+
+90 observations remain for the 1987 North Carolina crime statistics summary, one for each county.  The county variable "appears" to be the EPA County FIPS code for North Carolina:
+https://web.archive.org/web/20040928115908/http://www.epa.gov/enviro/html/codes/nc.html
+https://en.wikipedia.org/wiki/List_of_counties_in_North_Carolina
+
+There are 100 counties in the state of North Carolina as of the time of this analysis.  The following counties are missing from our 1987 crime statistics measurements:
+
+```{r missingCounties, warning=FALSE}
+# show a datatable of the counties we are missing in our analysis
+datatable(subset(nc_counties, !(fips_code %in% crime$county)), rownames=FALSE)
+
+```
+
+
+```{r CrimeMap, warning=FALSE}
+# Get the map data for North Carolina counties and load it with the FIPS codes and crime rates
+nc_map <- tbl_df(map_data("county", region = "north carolina"))
+crm_nc <- merge(x = crime[c("county","crmrte", "wser")], y = nc_counties, by.x = "county", by.y = "fips_code", all.x = TRUE)
+colnames(crm_nc) <- c("county","crime","wser","subregion")
+crm_nc <- crm_nc[c("subregion","crime","wser")]
+nc_map <- left_join(nc_map, crm_nc, by="subregion")
+nc_map$crime <- nc_map$crime * 100
+
+# Plot crime map for North Carolina 1987 by county
+ggplot() +
+  labs(title="North Carolina Crime by County (1987)") +
+  geom_polygon(data=as_data_frame(nc_map), color="black",
+               aes(x=long, y=lat, group=subregion, fill=crime)) +
+  coord_map("polyconic") + ggthemes::theme_map() +
+  scale_fill_continuous(low="white",high=berkeley_palette[6]) +
+  theme(legend.position="bottom", plot.title = element_text(size=18, hjust=0.5)) 
+
+```
+
+```{r HighCrimesAndMisdemeanors, warning=FALSE}
+
+#generate lists for Top 10 and Bottom 10 Counties by Crime Rate
+top10 <- head(sort(unique(nc_map$crime), decreasing = TRUE),10)
+bottom10 <- head(sort(unique(nc_map$crime), decreasing = FALSE),10)
+
+df_top <- data.frame(nc_map[nc_map$crime %in% top10,] %>% group_by(subregion, crime) %>% dplyr::summarise(n=dplyr::n()))[,c("subregion","crime")] %>% arrange(desc(crime))
+df_bottom <- data.frame(nc_map[nc_map$crime %in% bottom10,] %>% group_by(subregion, crime) %>% dplyr::summarise(n=dplyr::n()))[,c("subregion","crime")] %>% arrange(crime)
+
+stargazer(df_top, type="latex", summary=FALSE, title="Top 10 Counties by Crime Rate")
+stargazer(df_bottom, type="latex", summary=FALSE, title="Bottom 10 Counties by Crime Rate")
+
+```
+
+
+
+```{r EDA_allValues, warning=FALSE}
+# evaluate all values with the exception of county, year, and the 3 binary variables (west, central, urban)
+l <- tagList()
+n <- 0
+for (i in colnames(crime)){
+  if (!i %in% c("county","year","west","central","urban","east","urban_east","urban_west","urban_central")){
+    n <- n+1
+    # review the histogram of the dependent variable, both in natural and in log format
+    p1 <- plot_ly(alpha = 0.6) %>%
+      add_histogram(x = ~crime[,i], name=i, nbinsx=15,
+        marker=list(line=list(width=1, color=berkeley_palette[2]), color=berkeley_palette[1])) %>%
+      layout(barmode = "overlay")
+    
+    p2 <- plot_ly(alpha = 0.6) %>%
+      add_histogram(x = ~log(crime[,i]), name=paste0("log(",i,")"), nbinsx=15,
+        marker=list(line=list(width=1, color=berkeley_palette[1]), color=berkeley_palette[2])) %>%
+      layout(barmode = "overlay")
+    
+    sp <- subplot(p1, p2, margin = 0.05) %>% layout(annotations = list(
+     list(x = 0.15 , y = 1.05, text = paste0("Historgram - ",i), showarrow = F, xref='paper', yref='paper'),
+      list(x = 0.95 , y = 1.05, text = paste0("Histogram - log(",i,")"), 
+      showarrow = F, xref='paper', yref='paper')))
+    
+    l[[n]] <- as.widget(sp)
+  }
+}
+l
+
+```
+
+```{r CorrelationMatrix, fig.align="center", fig.width=14, fig.height=8, fig.cap="Correlation Matrix", fig.pos = "!ht",tidy=TRUE, tidy.opts=list(width.cutoff=80), message=FALSE}
+# create a correlation matrix for all natural (untransformed) variables
+X <- crime[,!names(crime) %in% c('county','year','west','urban','central')]
+corr <- round(cor(X),2)
+p.mat <- cor_pmat(X)
+
+ggcorrplot(corr, outline.col = "white", title = "Correlation Matrix : 1987 North Carolina Crime Data\nInsignificant Correlation P-Values Left Blank",
+   ggtheme = theme_classic(), lab=TRUE, type="lower", method="square", p.mat = p.mat, insig="blank")
+   #colors = c(berkeley_palette[3], berkeley_palette[1], berkeley_palette[2]))
+```
+
+```{r CorrelLogAnalysis, fig.align="center", fig.width=14, fig.height=8, fig.cap="Correlation Matrix", fig.pos = "!ht",tidy=TRUE, tidy.opts=list(width.cutoff=80), message=FALSE}
+# correlation matrix plot for all log transformed variables
+for (c in names(crime[,!names(crime) %in% c('county','year','west','central','urban')])){
+  new_c <- paste0("log_", c)
+  crime[,new_c] <- log(crime[,c])
+}
+
+X <- crime[,names(crime) %in% c("log_crmrte","log_prbarr","log_prbconv","log_prbpris","log_avgsen","log_polpc","log_density","log_taxpc","log_pctmin80","log_wcon","log_wtuc","log_wtrd","log_wfir","log_wser","log_wmfg","log_wfed","log_wsta","log_wloc","log_mix","log_pctymle")]
+
+corr <- round(cor(X),2)
+p.mat <- cor_pmat(X)
+
+ggcorrplot(corr, outline.col = "white", title = "Correlation Matrix : 1987 North Carolina Crime Data\nInsignificant Correlation P-Values Left Blank",
+   ggtheme = theme_classic(), lab=TRUE, type="lower", method="square", p.mat = p.mat, insig="blank")
+
+
+```
+
+```{r UtilityFunction, warning=FALSE, include=FALSE, message=FALSE}
+# utility function for ggplot-based QQ plots with Berkeley color scheme
+# used for diagnostic plots of models (below)
+ggQQ <- function(LM)
+{
+    y <- quantile(LM$resid[!is.na(LM$resid)], c(0.25, 0.75))
+    x <- qnorm(c(0.25, 0.75))
+    slope <- diff(y)/diff(x)
+    int <- y[1L] - slope * x[1L]
+    p <- ggplot(LM, aes(sample=.resid)) +
+        stat_qq(alpha = 0.4) + theme_classic() +
+        labs(title="Normal Q-Q", y="Standardized residuals", x="Theoretical Quantiles") +
+        geom_abline(slope = slope, intercept = int, color=berkeley_palette[1]) +
+        theme(legend.position="none", plot.title = element_text(color = berkeley_palette[1]),
+        axis.title.x = element_text(color = berkeley_palette[9]),
+        axis.title.y = element_text(color = berkeley_palette[9]))
+
+    return(p)
+}
+
+```
+
+
+```{r NaiveModel, warning=FALSE, fig.width=14, fig.height=8,}
+# exclude county (identifier) and year (static value) from analysis
+X <- crime[,!names(crime) %in% c('county','year','crmrte')]
+
+# build a naive model predicting log(crime) using only log(density) (which had the highest correlation)
+naive_model <- lm(log_crmrte~log_density,data=X)
+
+# perform the RESET test and BP test for 
+reset_val <- resettest(naive_model, power=2, type="regressor", data=X)$p.value
+homoskedasticity <- as.numeric(bptest(naive_model)$p.value)
+#naive model not possible to have multi-colinearity as we are using only 1 input value
+
+stargazer(naive_model,type="latex", title="Best Naive Model", align=T, ci=T, ci.level=.95, single.row=T)
+
+predictions <- exp(predict(naive_model, X))
+residuals <- crime$crmrte - predictions
+
+df <- crime %>% dplyr::select (crmrte, density)
+df$predicted <- predictions
+df$residuals <- residuals
+
+df %>% tidyr::gather(key="iv", value="x", -crmrte, -predicted, -residuals) %>%
+  ggplot(aes(x = x, y = crmrte)) +
+  geom_smooth(method="lm", se=FALSE, color="lightgrey") +
+  geom_segment(aes(xend = x, yend = predicted), alpha = .2) +
+  geom_point(aes(color = residuals)) +
+  scale_color_gradient2(low = "blue", mid = "white", high = "red") +
+  guides(color = FALSE) +
+  geom_point(aes(y = predicted), shape = 1) +
+  facet_grid(~ iv, scales = "free_x") +
+  theme_bw() + labs(x="Density", y="Crime Rate",
+    title="Actual vs. Predicted Crime Rate - Residuals") +
+  theme(legend.position="none", plot.title = element_text(color = berkeley_palette[1]),
+  axis.title.x = element_blank(),
+  axis.title.y = element_text(color = berkeley_palette[9]),
+  axis.text.x = element_text(color = berkeley_palette[9]))
+
+
+p1 <- ggplot(naive_model, aes(.fitted, .resid)) +
+  geom_point() +stat_smooth(method="loess") + 
+  geom_hline(yintercept=0, col="red", linetype="dashed") +
+  xlab("Fitted values")+ylab("Residuals") +
+  ggtitle("Residual vs Fitted Plot")+theme_bw()+
+  theme(legend.position="none", plot.title = element_text(color = berkeley_palette[1]),
+    axis.title.x = element_text(color = berkeley_palette[9]),
+    axis.title.y = element_text(color = berkeley_palette[9]))
+
+
+p2 <- ggplot(naive_model, aes(seq_along(.cooksd), .cooksd)) + 
+  geom_bar(stat="identity", position="identity")+
+  xlab("Obs. Number")+ylab("Cook's distance")+
+  ggtitle("Cook's distance")+theme_bw()+
+  theme(legend.position="none", plot.title = element_text(color = berkeley_palette[1]),
+    axis.title.x = element_text(color = berkeley_palette[9]),
+    axis.title.y = element_text(color = berkeley_palette[9]))
+
+p3 <- ggplot(naive_model, aes(.hat, .stdresid)) + 
+  geom_point(aes(size=.cooksd), na.rm=TRUE) +
+  stat_smooth(method="loess", na.rm=TRUE) +
+  xlab("Leverage") + ylab("Standardized Residuals") +
+  ggtitle("Residual vs Leverage Plot") +
+  scale_size_continuous("Cook's Distance", range=c(1,5)) + theme_bw() + 
+  theme(legend.position="bottom", plot.title = element_text(color = berkeley_palette[1]),
+    axis.title.x = element_text(color = berkeley_palette[9]),
+    axis.title.y = element_text(color = berkeley_palette[9]))
+
+    
+p4 <- ggplot(naive_model, aes(.hat, .cooksd))+geom_point(na.rm=TRUE) + 
+  stat_smooth(method="loess", na.rm=TRUE) +
+  xlab("Leverage hii")+ylab("Cook's Distance") +
+  ggtitle("Cook's dist vs Leverage hii/(1-hii)") +
+  geom_abline(slope=seq(0,3,0.5), color="gray", linetype="dashed") +
+  theme_bw() +
+  theme(legend.position="none", plot.title = element_text(color = berkeley_palette[1]),
+    axis.title.x = element_text(color = berkeley_palette[9]),
+    axis.title.y = element_text(color = berkeley_palette[9]))
+
+
+p5 <- ggplot(naive_model, aes(.fitted, sqrt(abs(.stdresid))))+geom_point(na.rm=TRUE)+
+  stat_smooth(method="loess", na.rm = TRUE)+xlab("Fitted Value")+
+  ylab(expression(sqrt("|Standardized residuals|")))+
+  ggtitle("Scale-Location")+theme_bw()+
+  theme(legend.position="none", plot.title = element_text(color = berkeley_palette[1]),
+    axis.title.x = element_text(color = berkeley_palette[9]),
+    axis.title.y = element_text(color = berkeley_palette[9]))
+
+grid.arrange(p1,p2,p3,p4,p5,ggQQ(naive_model), ncol=3)
+
+stargazer(data.frame(RESET=reset_val, "Breusch-pagan"=homoskedasticity), type="latex", summary=F)
+```
+
+```{r ManualModel, warning=FALSE, fig.width=14, fig.height=8}
+#exclude county (identifier) and year (static value) from analysis
+X <- crime[,!names(crime) %in% c('county','year','crmrte')]
+
+#based on EDA, we believe 4 key variables will get us a solid performing model : log_density
+manual_model <- lm(log_crmrte~log_density+log_pctmin80+prbconv+log_polpc,data=X)
+reset_val <- resettest(manual_model, power=2, type="regressor", data=X)$p.value
+homoskedasticity <- as.numeric(bptest(manual_model)$p.value)
+
+
+stargazer(manual_model,type="latex", title="Manual Tuned Model", align=T, ci=T, ci.level=.95, single.row=T)
+
+predictions <- exp(predict(manual_model, X))
+residuals <- crime$crmrte - predictions
+
+df <- crime %>% dplyr::select (crmrte, density, pctmin80, prbconv)
+df$predicted <- predictions
+df$residuals <- residuals
+
+df %>% tidyr::gather(key="iv", value="x", -crmrte, -predicted, -residuals) %>%
+  ggplot(aes(x = x, y = crmrte)) +
+  geom_smooth(method="lm", se=FALSE, color="lightgrey") +
+  geom_segment(aes(xend = x, yend = predicted), alpha = .2) +
+  geom_point(aes(color = residuals)) +
+  scale_color_gradient2(low = "blue", mid = "white", high = "red") +
+  guides(color = FALSE) +
+  geom_point(aes(y = predicted), shape = 1) +
+  facet_grid(~ iv, scales = "free_x") +
+  theme_bw() + labs(x="Density", y="Crime Rate",
+    title="Actual vs. Predicted Crime Rate - Residuals") +
+  theme(legend.position="none", plot.title = element_text(color = berkeley_palette[1]),
+  axis.title.x = element_blank(),
+  axis.title.y = element_text(color = berkeley_palette[9]),
+  axis.text.x = element_text(color = berkeley_palette[9]))
+
+p1 <- ggplot(manual_model, aes(.fitted, .resid)) +
+  geom_point() +stat_smooth(method="loess") + 
+  geom_hline(yintercept=0, col="red", linetype="dashed") +
+  xlab("Fitted values")+ylab("Residuals") +
+  ggtitle("Residual vs Fitted Plot")+theme_bw()+
+  theme(legend.position="none", plot.title = element_text(color = berkeley_palette[1]),
+    axis.title.x = element_text(color = berkeley_palette[9]),
+    axis.title.y = element_text(color = berkeley_palette[9]))
+
+
+p2 <- ggplot(manual_model, aes(seq_along(.cooksd), .cooksd)) + 
+  geom_bar(stat="identity", position="identity")+
+  xlab("Obs. Number")+ylab("Cook's distance")+
+  ggtitle("Cook's distance")+theme_bw()+
+  theme(legend.position="none", plot.title = element_text(color = berkeley_palette[1]),
+    axis.title.x = element_text(color = berkeley_palette[9]),
+    axis.title.y = element_text(color = berkeley_palette[9]))
+
+p3 <- ggplot(manual_model, aes(.hat, .stdresid)) + 
+  geom_point(aes(size=.cooksd), na.rm=TRUE) +
+  stat_smooth(method="loess", na.rm=TRUE) +
+  xlab("Leverage") + ylab("Standardized Residuals") +
+  ggtitle("Residual vs Leverage Plot") +
+  scale_size_continuous("Cook's Distance", range=c(1,5)) + theme_bw() + 
+  theme(legend.position="bottom", plot.title = element_text(color = berkeley_palette[1]),
+    axis.title.x = element_text(color = berkeley_palette[9]),
+    axis.title.y = element_text(color = berkeley_palette[9]))
+
+p4 <- ggplot(manual_model, aes(.hat, .cooksd))+geom_point(na.rm=TRUE) + 
+  stat_smooth(method="loess", na.rm=TRUE) +
+  xlab("Leverage hii")+ylab("Cook's Distance") +
+  ggtitle("Cook's dist vs Leverage hii/(1-hii)") +
+  geom_abline(slope=seq(0,3,0.5), color="gray", linetype="dashed") +
+  theme_bw() +
+  theme(legend.position="none", plot.title = element_text(color = berkeley_palette[1]),
+    axis.title.x = element_text(color = berkeley_palette[9]),
+    axis.title.y = element_text(color = berkeley_palette[9]))
+
+p5 <- ggplot(manual_model, aes(.fitted, sqrt(abs(.stdresid))))+geom_point(na.rm=TRUE)+
+  stat_smooth(method="loess", na.rm = TRUE)+xlab("Fitted Value")+
+  ylab(expression(sqrt("|Standardized residuals|")))+
+  ggtitle("Scale-Location")+theme_bw()+
+  theme(legend.position="none", plot.title = element_text(color = berkeley_palette[1]),
+    axis.title.x = element_text(color = berkeley_palette[9]),
+    axis.title.y = element_text(color = berkeley_palette[9]))
+
+grid.arrange(p1,p2,p3,p4,p5,ggQQ(manual_model), ncol=3)
+
+stargazer(data.frame(RESET=reset_val, "Breusch-pagan"=homoskedasticity), type="latex", summary=F)
+stargazer(vif(manual_model), type="latex", summary=F, title="VIF")
+```
+
+```{r FeatureSelectionModel, fig.width=14, fig.height=8, message=FALSE, warning=FALSE}
+
+#exclude county (identifier) and year (static value) from analysis
+X <- data.frame(crime[,!names(crime) %in% c('county','year','crmrte')])
+
+regfit.full <- regsubsets(log_crmrte ~ ., data = X, nvmax=NULL, method="exhaustive")
+reg.m.out <- summary(regfit.full)
+reg.m.regtab <- cbind.data.frame( round(reg.m.out$rsq,4), round(reg.m.out$adjr2,4), 
+                                 round(reg.m.out$bic,4),reg.m.out$which) # stich things together
+colnames(reg.m.regtab) <- c("R2","AdjR2","bic","Intercept",colnames(reg.m.regtab)[5:length(colnames(reg.m.regtab))])
+datatable(reg.m.regtab[order(reg.m.regtab[,3]),], rownames = TRUE, filter="top", options = list(pageLength = 10, scrollX=TRUE ))
+
+#plot(regfit.full, scale="bic")
+
+pick <- function(condition){
+  function(d) d %>% filter_(condition)
+}
+
+data.frame(reg.m.regtab) %>% 
+  tidyr::gather(key="iv", value="x", -R2, -AdjR2, -bic, -Intercept) %>%
+  ggplot(aes(x = iv, y = bic)) +
+  geom_point(data = pick(~x == TRUE), 
+    shape=23, fill=berkeley_palette[1], color="darkred", size = 4) +
+  ylim(c(-158,-155)) + theme_bw() +
+  theme(axis.text.x = element_text(angle = 90)) +
+  labs(title="BIC Score for RegSubsets :: Feature Selection",
+    x="Input Feature", y="BIC Score") +
+  theme(legend.position="none", 
+    plot.title = element_text(color = berkeley_palette[1]),
+    axis.title.x = element_text(color = berkeley_palette[9]),
+    axis.title.y = element_text(color = berkeley_palette[9]))
+
+
+data.frame(reg.m.regtab) %>% 
+  tidyr::gather(key="iv", value="x", -R2, -AdjR2, -bic, -Intercept) %>%
+  ggplot(aes(x=bic,y=AdjR2,label=round(AdjR2,2))) +
+    geom_line( color=berkeley_palette[1], size=1, alpha=0.9, linetype="dashed") +
+    geom_point(color = berkeley_palette[3], size = 2) +
+    theme_classic() + scale_x_reverse() + ylim(c(0.83, 0.95)) +
+    xlim(c(-140,-158)) + labs(title="Adjusted R-Squared by BIC Score",
+      x="BIC Score", y="Adjusted R-Squared") + geom_text(nudge_y = 0.003, nudge_x = .5, size=3) + 
+    theme(legend.position="none", 
+      plot.title = element_text(color = berkeley_palette[1]),
+      axis.title.x = element_text(color = berkeley_palette[9]),
+      axis.title.y = element_text(color = berkeley_palette[9]))
+
+
+datatable(data.frame(coef(regfit.full, 10)), options = list(pageLength=20)) 
+
+best_regsub_model <- lm(log_crmrte~prbconv+pctmin80+wfir+log_prbarr+log_polpc+log_density+log_taxpc+log_wsta,data=X)
+reset_val <- resettest(best_regsub_model, power=2, type="regressor", data=X)$p.value
+homoskedasticity <- as.numeric(bptest(best_regsub_model)$p.value)
+
+
+stargazer(best_regsub_model,type="latex", title="Best Subset Model: Regsubsets Function", 
+          align=T, ci=T, ci.level=.95, single.row=T)
+
+### step function 
+
+# Forward/Backward/Stepwise Regression Using AIC
+#nullmodel = lm(log_crmrte ~ 1, data = X)
+#fullmodel = lm(log_crmrte ~ ., data = X)
+
+#model.step <- step(nullmodel, scope = list(lower = nullmodel,upper = fullmodel),direction = "both", trace = FALSE)
+
+#best_step <- formula(model.step)
+#best_step_model <- lm(best_step,data=X) 
+
+#stargazer(best_step_model,type="text", title="Best Subset Model: Step Function", 
+#          align=T, ci=T, ci.level=.95, single.row=T)
+
+#min.AIC_model <- stepAIC(fullmodel, trace = FALSE);
+#stargazer(min.AIC_model, type="text", title="Best StepAIC Model",
+#          align=T, ci=T, ci.level=.95, single.row=T)
+
+predictions <- exp(predict(best_regsub_model, X))
+residuals <- crime$crmrte - predictions
+
+df <- crime %>% dplyr::select (crmrte, prbconv, pctmin80, wfir, prbarr, polpc, density, taxpc, wsta)
+df$predicted <- predictions
+df$residuals <- residuals
+
+df %>% tidyr::gather(key="iv", value="x", -crmrte, -predicted, -residuals) %>%
+  ggplot(aes(x = x, y = crmrte)) +
+  geom_smooth(method="lm", se=FALSE, color="lightgrey") +
+  geom_segment(aes(xend = x, yend = predicted), alpha = .2) +
+  geom_point(aes(color = residuals)) +
+  scale_color_gradient2(low = "blue", mid = "white", high = "red") +
+  guides(color = FALSE) +
+  geom_point(aes(y = predicted), shape = 1) +
+  facet_grid(~ iv, scales = "free_x") +
+  theme_bw() + labs(x="Density", y="Crime Rate",
+    title="Actual vs. Predicted Crime Rate - Residuals") +
+  theme(legend.position="none", plot.title = element_text(color = berkeley_palette[1]),
+  axis.title.x = element_blank(),
+  axis.title.y = element_text(color = berkeley_palette[9]),
+  axis.text.x = element_text(color = berkeley_palette[9]))
+
+p1 <- ggplot(best_regsub_model, aes(.fitted, .resid)) +
+  geom_point() +stat_smooth(method="loess") + 
+  geom_hline(yintercept=0, col="red", linetype="dashed") +
+  xlab("Fitted values")+ylab("Residuals") +
+  ggtitle("Residual vs Fitted Plot")+theme_bw()+
+  theme(legend.position="none", plot.title = element_text(color = berkeley_palette[1]),
+    axis.title.x = element_text(color = berkeley_palette[9]),
+    axis.title.y = element_text(color = berkeley_palette[9]))
+
+p2 <- ggplot(best_regsub_model, aes(seq_along(.cooksd), .cooksd)) + 
+  geom_bar(stat="identity", position="identity")+
+  xlab("Obs. Number")+ylab("Cook's distance")+
+  ggtitle("Cook's distance")+theme_bw()+
+  theme(legend.position="none", plot.title = element_text(color = berkeley_palette[1]),
+    axis.title.x = element_text(color = berkeley_palette[9]),
+    axis.title.y = element_text(color = berkeley_palette[9]))
+
+p3 <- ggplot(best_regsub_model, aes(.hat, .stdresid)) + 
+  geom_point(aes(size=.cooksd), na.rm=TRUE) +
+  stat_smooth(method="loess", na.rm=TRUE) +
+  xlab("Leverage") + ylab("Standardized Residuals") +
+  ggtitle("Residual vs Leverage Plot") +
+  scale_size_continuous("Cook's Distance", range=c(1,5)) + theme_bw() + 
+  theme(legend.position="bottom", plot.title = element_text(color = berkeley_palette[1]),
+    axis.title.x = element_text(color = berkeley_palette[9]),
+    axis.title.y = element_text(color = berkeley_palette[9]))
+
+p4 <- ggplot(best_regsub_model, aes(.hat, .cooksd))+geom_point(na.rm=TRUE) + 
+  stat_smooth(method="loess", na.rm=TRUE) +
+  xlab("Leverage hii")+ylab("Cook's Distance") +
+  ggtitle("Cook's dist vs Leverage hii/(1-hii)") +
+  geom_abline(slope=seq(0,3,0.5), color="gray", linetype="dashed") +
+  theme_bw() +
+  theme(legend.position="none", plot.title = element_text(color = berkeley_palette[1]),
+    axis.title.x = element_text(color = berkeley_palette[9]),
+    axis.title.y = element_text(color = berkeley_palette[9]))
+
+p5 <- ggplot(best_regsub_model, aes(.fitted, sqrt(abs(.stdresid))))+geom_point(na.rm=TRUE)+
+  stat_smooth(method="loess", na.rm = TRUE)+xlab("Fitted Value")+
+  ylab(expression(sqrt("|Standardized residuals|")))+
+  ggtitle("Scale-Location")+theme_bw()+
+  theme(legend.position="none", plot.title = element_text(color = berkeley_palette[1]),
+    axis.title.x = element_text(color = berkeley_palette[9]),
+    axis.title.y = element_text(color = berkeley_palette[9]))
+
+grid.arrange(p1,p2,p3,p4,p5,ggQQ(best_regsub_model), ncol=3)
+
+stargazer(data.frame(RESET=reset_val, "Breusch-pagan"=homoskedasticity), type="latex", summary=F)
+stargazer(vif(best_regsub_model), type="latex", summary=F, title="VIF")
+
+ggplot(data=df, aes(x=crmrte, y=predicted)) +
+  geom_point(color=berkeley_palette[1]) +
+  geom_smooth(method = "lm", color=berkeley_palette[2]) +
+  labs(title="Predicted Crime Rate vs. Actual Crime Rate (LM)\nby prbconv, pctmin80, wfir, prbarr, polpc, density, taxpc, wsta", y="Predicted Crime", x="Actual Crime") +
+  scale_color_manual(values=rep("#000000",2)) +
+  scale_fill_manual(values=berkeley_palette) +
+  theme(legend.position="top", plot.title = element_text(color = berkeley_palette[1]),
+    axis.title.x = element_text(color = berkeley_palette[9]),
+    axis.title.y = element_text(color = berkeley_palette[9])) +
+  theme_classic()
+
+
+```
+
+```{r OverfitModel, fig.width=14, fig.height=8, message=FALSE, warning=FALSE}
+X <- data.frame(crime[,!names(crime) %in% c('county','year','crmrte')])
+stuffedModel <- lm(log_crmrte ~ ., data=X)
+min.AIC_model <- stepAIC(stuffedModel, trace = FALSE);
+
+reset_val <- resettest(min.AIC_model, power=2, type="regressor", data=X)$p.value
+homoskedasticity <- as.numeric(bptest(min.AIC_model)$p.value)
+
+stargazer(min.AIC_model, type="latex", title="Best StepAIC Model",
+          align=T, ci=T, ci.level=.95, single.row=T)
+
+p1 <- ggplot(min.AIC_model, aes(.fitted, .resid)) +
+  geom_point() +stat_smooth(method="loess") + 
+  geom_hline(yintercept=0, col="red", linetype="dashed") +
+  xlab("Fitted values")+ylab("Residuals") +
+  ggtitle("Residual vs Fitted Plot")+theme_bw()+
+  theme(legend.position="none", plot.title = element_text(color = berkeley_palette[1]),
+    axis.title.x = element_text(color = berkeley_palette[9]),
+    axis.title.y = element_text(color = berkeley_palette[9]))
+
+p2 <- ggplot(min.AIC_model, aes(seq_along(.cooksd), .cooksd)) + 
+  geom_bar(stat="identity", position="identity")+
+  xlab("Obs. Number")+ylab("Cook's distance")+
+  ggtitle("Cook's distance")+theme_bw()+
+  theme(legend.position="none", plot.title = element_text(color = berkeley_palette[1]),
+    axis.title.x = element_text(color = berkeley_palette[9]),
+    axis.title.y = element_text(color = berkeley_palette[9]))
+
+p3 <- ggplot(min.AIC_model, aes(.hat, .stdresid)) + 
+  geom_point(aes(size=.cooksd), na.rm=TRUE) +
+  stat_smooth(method="loess", na.rm=TRUE) +
+  xlab("Leverage") + ylab("Standardized Residuals") +
+  ggtitle("Residual vs Leverage Plot") +
+  scale_size_continuous("Cook's Distance", range=c(1,5)) + theme_bw() + 
+  theme(legend.position="bottom", plot.title = element_text(color = berkeley_palette[1]),
+    axis.title.x = element_text(color = berkeley_palette[9]),
+    axis.title.y = element_text(color = berkeley_palette[9]))
+
+p4 <- ggplot(min.AIC_model, aes(.hat, .cooksd))+geom_point(na.rm=TRUE) + 
+  stat_smooth(method="loess", na.rm=TRUE) +
+  xlab("Leverage hii")+ylab("Cook's Distance") +
+  ggtitle("Cook's dist vs Leverage hii/(1-hii)") +
+  geom_abline(slope=seq(0,3,0.5), color="gray", linetype="dashed") +
+  theme_bw() +
+  theme(legend.position="none", plot.title = element_text(color = berkeley_palette[1]),
+    axis.title.x = element_text(color = berkeley_palette[9]),
+    axis.title.y = element_text(color = berkeley_palette[9]))
+
+p5 <- ggplot(min.AIC_model, aes(.fitted, sqrt(abs(.stdresid))))+geom_point(na.rm=TRUE)+
+  stat_smooth(method="loess", na.rm = TRUE)+xlab("Fitted Value")+
+  ylab(expression(sqrt("|Standardized residuals|")))+
+  ggtitle("Scale-Location")+theme_bw()+
+  theme(legend.position="none", plot.title = element_text(color = berkeley_palette[1]),
+    axis.title.x = element_text(color = berkeley_palette[9]),
+    axis.title.y = element_text(color = berkeley_palette[9]))
+
+grid.arrange(p1,p2,p3,p4,p5,ggQQ(best_regsub_model), ncol=3)
+
+stargazer(data.frame(RESET=reset_val, "Breusch-pagan"=homoskedasticity), type="latex", summary=F)
+stargazer(vif(min.AIC_model)[1:7], type="latex", summary=F, title="VIF Scores")
+stargazer(vif(min.AIC_model)[8:14], type="latex", summary=F, title="VIF Scores")
+stargazer(vif(min.AIC_model)[15:21], type="latex", summary=F, title="VIF Scores")
+
+
+predictions <- exp(predict(stuffedModel, X))
+residuals <- crime$crmrte - predictions
+
+df <- crime %>% dplyr::select (crmrte)
+df$predicted <- predictions
+df$residuals <- residuals
+
+ggplot(data=df, aes(x=crmrte, y=predicted)) +
+  geom_point(color=berkeley_palette[1]) +
+  geom_smooth(method = "lm", color=berkeley_palette[2]) +
+  labs(title="Predicted Crime Rate vs. Actual Crime Rate (LM)\nModel #3 (Overfit)", y="Predicted Crime", x="Actual Crime") +
+  scale_color_manual(values=rep("#000000",2)) +
+  scale_fill_manual(values=berkeley_palette) +
+  theme(legend.position="top", plot.title = element_text(color = berkeley_palette[1]),
+    axis.title.x = element_text(color = berkeley_palette[9]),
+    axis.title.y = element_text(color = berkeley_palette[9])) +
+  theme_classic()
+
+```
+
+```{r compareModels, warning=FALSE}
+# provide a comparison of the naive, manual, and best-fit models
+stargazer(naive_model, manual_model, min.AIC_model, type="latex", title="Model Comparison")
+```
+

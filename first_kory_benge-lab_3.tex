@@ -1,0 +1,129 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Statistics for Data Science (DataSci W203)
+% Lab 3 : Joy First, Kevin Kory, Cristopher Benge
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+% Setup
+\documentclass[12pt,a4paper,fleqn]{report}
+\usepackage[inner=1.5cm,outer=1.5cm,top=2.5cm,bottom=2.5cm]{geometry}
+\usepackage{graphicx}
+\graphicspath{{images/}}
+\usepackage[english]{babel}
+\usepackage{amsmath,blkarray}
+\usepackage{amssymb}
+\usepackage{hyperref}
+\numberwithin{equation}{subsection}
+\usepackage[usenames,dvipsnames,svgnames]{xcolor}
+\usepackage{colortbl}
+\usepackage{booktabs}
+\usepackage{multicol}
+\usepackage[font={small,sl,color=OrangeRed}]{caption}
+\usepackage{subcaption}
+\usepackage{siunitx}
+\usepackage{listings}
+\usepackage{hyperref}
+\usepackage{mathtools}
+\usepackage[some]{background}
+\usepackage{tikz}
+\usetikzlibrary{arrows.meta,automata,positioning}
+\usepackage[clearempty, indentfirst]{titlesec}
+\usepackage{microtype}%
+\usepackage{fourier, erewhon, cabin}
+\usepackage[T1]{fontenc}%
+\usepackage[utf8]{inputenc}
+\usepackage{titlepic}
+\usepackage{enumitem}
+\usepackage{dcolumn}
+\usepackage{outlines}
+\usepackage{fancyhdr}
+\fancyfoot{}
+\fancyfoot[L]{\textit{PAGE \thepage}}
+\fancyfoot[R]{\textit{BENGE, FIRST, KORY}}
+\fancyfoot[C]{\textit{W203 FALL 2019 - SECTION 2 - LAB 3}}
+\renewcommand{\footrulewidth}{0.3pt}
+\pagestyle{fancy}
+\date{}
+\hypersetup{
+	colorlinks=true,
+	linkcolor=magenta,
+	filecolor=magenta,      
+	urlcolor=blue,
+	linkbordercolor=blue,
+	urlbordercolor=blue
+}
+
+\DeclareRobustCommand{\bbone}{\text{\usefont{U}{bbold}{m}{n}1}}
+\DeclareMathOperator{\EX}{\mathbb{E}}% expected value
+\DeclarePairedDelimiter\abs{\lvert}{\rvert}%
+
+\lstset{language=R,
+	basicstyle=\small\ttfamily,
+	stringstyle=\color{DarkGreen},
+	otherkeywords={0,1,2,3,4,5,6,7,8,9},
+	morekeywords={TRUE,FALSE},
+	deletekeywords={data,frame,length,as,character},
+	keywordstyle=\color{blue},
+	commentstyle=\color{DarkGreen},
+}
+
+\titleformat{\chapter}[display]{\thispagestyle{empty}\sffamily\bfseries\Huge\centering}{Section \thechapter}{1em}{\textls[40]}[\clearpage]
+\titleformat{name=\chapter, numberless}[block]{\thispagestyle{empty}\sffamily\bfseries\huge\centering}{}{0pt}{\textls[40]}
+
+\newcommand{\QAt}{\mathbf{Q}_{A_{2}A_{2}}}
+\newcommand{\QAo}{\mathbf{Q}_{A_{1}A_{1}}}
+\newcommand{\QAot}{\mathbf{Q}_{A_{1}A_{2}}}
+\newcommand{\QAto}{\mathbf{Q}_{A_{2}A_{1}}}
+\newcommand{\QAtC}{\mathbf{Q}_{A_{2}C}}
+\newcommand{\I}{\mathbf{I}}
+
+\title{
+	{Statistics for Data Science}\\
+	{\large Fall 2019 - Section 2 - Lab 3}\\
+	{\vspace*{0.5in}}
+	{\includegraphics[width=7cm]{UCBerkeley.png}}
+}
+\author{ 
+	Benge, Cristopher\\
+	\texttt{cris.benge@berkeley.edu}
+	\and
+	First, Joy\\
+	\texttt{jfirst@berkeley.edu}
+	\and
+	Kory, Kevin\\
+	\texttt{knkory92@berkeley.edu}
+}
+\date{{\vspace*{1.9in}}\normalsize 10 December 2019}
+
+\definecolor{LightCyan}{rgb}{0.88,1,1}
+\newcommand{\textmathbf}[1]{\textbf{\boldmath#1}}
+\definecolor{Gray}{gray}{0.85}
+\newcolumntype{a}{>{\columncolor{Gray}}c}
+\newcolumntype{b}{>{\columncolor{white}}c}
+
+\usepackage[backend=biber,style=apa]{biblatex}
+\setlength\bibitemsep{1.5\itemsep}
+\addbibresource{references.bib}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\begin{document}
+
+%\maketitle
+\input{chapters/title}
+
+\tableofcontents
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\chapter{Introduction}
+\input{chapters/introduction}
+
+\chapter{Exploratory Data Analysis}
+\input{chapters/eda}
+
+\chapter{Analysis \& Models}
+\input{chapters/analysis}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\input{chapters/bibliography}
+\input{chapters/appendix}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\end{document}
