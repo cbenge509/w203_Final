@@ -13,6 +13,9 @@
 
 UC Berkeley, Master of Information and Data Science | Fall 2019
 W203: Statistics for Data Science | G. Kleeman, PhD
+<br>
+<br>
+<br>
 
 ---
 
@@ -53,9 +56,6 @@ crmrte ~ prbarr + prbconv + log(polpc) + taxpc + wcon + pctymle + log(pctmin80)
 
 ## Data
 
-<details>
-<summary><strong>Click to expand data documentation</strong></summary>
-
 ### Source & Context
 
 County-level crime statistics from 90 North Carolina counties (1987), sourced from Cornwell and Trumbull (1994). The dataset captures law enforcement, economic, and demographic characteristics used to study crime determinants.
@@ -89,14 +89,9 @@ County-level crime statistics from 90 North Carolina counties (1987), sourced fr
 
 *Counties in the dataset (shaded) vs. missing counties*
 
-</details>
-
 ---
 
 ## Methodology
-
-<details>
-<summary><strong>Click to expand methodology details</strong></summary>
 
 ### Approach
 
@@ -127,14 +122,9 @@ We employ **Ordinary Least Squares (OLS) regression** with a nested model strate
 
 *Diagnostic plots for recommended Model 2*
 
-</details>
-
 ---
 
 ## Repository Structure
-
-<details>
-<summary><strong>Click to expand file listing</strong></summary>
 
 | File | Description |
 |:-----|:------------|
@@ -145,8 +135,6 @@ We employ **Ordinary Least Squares (OLS) regression** with a nested model strate
 | [`crime_v2.csv`](crime_v2.csv) | Source dataset |
 | `chapters/` | LaTeX chapter files (`introduction.tex`, `eda.tex`, `analysis.tex`) |
 | `images/` | Generated visualizations and plots |
-
-</details>
 
 ---
 
